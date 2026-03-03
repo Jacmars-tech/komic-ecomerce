@@ -1,24 +1,41 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Current app-compatible rules:
-    // - Browser can read chat threads/messages for real-time updates.
-    // - Browser cannot write anything.
-    // - All writes must go through your Next.js API (Firebase Admin SDK).
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.role == "ADMIN";
+    }
+
+    function isThreadOwner(threadDoc) {
+      return isSignedIn() && threadDoc.data.userId == request.auth.uid;
+    }
+
+    function isThreadOwnerById(threadId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/chatThreads/$(threadId))
+        && get(/databases/$(database)/documents/chatThreads/$(threadId)).data.userId == request.auth.uid;
+    }
+
+    // Chat access:
+    // - Customer can read only their own thread/messages.
+    // - Admin can read all support threads/messages.
+    // - All writes go through server APIs using Firebase Admin SDK.
     match /chatThreads/{threadId} {
-      allow read: if true;
-      allow write: if false;
+      allow read: if isAdmin() || isThreadOwner(resource);
+      allow create, update, delete: if false;
 
       match /messages/{messageId} {
-        allow read: if true;
-        allow write: if false;
+        allow read: if isAdmin() || isThreadOwnerById(threadId);
+        allow create, update, delete: if false;
       }
     }
 
-    // Deny everything else by default.
+    // Deny all other collections to browser SDK.
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
-

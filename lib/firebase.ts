@@ -1,4 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -18,5 +19,6 @@ if (!isConfigValid) {
 
 const app = getApps().length > 0 ? getApp() : initializeApp(isConfigValid ? firebaseConfig : { apiKey: "dummy", projectId: "dummy" });
 const db = getFirestore(app);
+const auth = getAuth(app);
 
-export { db };
+export { db, auth };

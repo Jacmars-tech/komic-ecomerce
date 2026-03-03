@@ -3,9 +3,10 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { MessageCircle, X, Send, Bot, Minimize2, Maximize2 } from "lucide-react";
+import { signInWithCustomToken } from "firebase/auth";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 
 type ChatMessage = {
   id: string;
@@ -18,6 +19,7 @@ export function ChatBubble() {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [firebaseReady, setFirebaseReady] = useState(false);
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadingThread, setLoadingThread] = useState(false);
@@ -42,6 +44,7 @@ export function ChatBubble() {
       if (response.status === 401) {
         setRequiresLogin(true);
         setThreadId(null);
+        setFirebaseReady(false);
         setLoadingThread(false);
         return;
       }
@@ -49,13 +52,35 @@ export function ChatBubble() {
       if (!response.ok) {
         setError(payload.error || "Unable to initialize chat.");
         setThreadId(null);
+        setFirebaseReady(false);
         setLoadingThread(false);
         return;
       }
 
-      setRequiresLogin(false);
-      setThreadId(payload.thread?.threadId || null);
-      setLoadingThread(false);
+      const firebaseTokenRes = await fetch("/api/firebase/token");
+      const firebaseTokenPayload = await firebaseTokenRes.json().catch(() => ({}));
+      if (!firebaseTokenRes.ok || !firebaseTokenPayload.token) {
+        setError(firebaseTokenPayload.error || "Unable to initialize secure chat session.");
+        setThreadId(null);
+        setFirebaseReady(false);
+        setLoadingThread(false);
+        return;
+      }
+
+      try {
+        if (auth.currentUser?.uid !== firebaseTokenPayload.uid) {
+          await signInWithCustomToken(auth, firebaseTokenPayload.token);
+        }
+        setRequiresLogin(false);
+        setFirebaseReady(true);
+        setThreadId(payload.thread?.threadId || null);
+        setLoadingThread(false);
+      } catch {
+        setError("Unable to initialize secure chat session.");
+        setThreadId(null);
+        setFirebaseReady(false);
+        setLoadingThread(false);
+      }
     };
 
     bootstrap();
@@ -66,7 +91,7 @@ export function ChatBubble() {
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen || !threadId) return;
+    if (!isOpen || !threadId || !firebaseReady) return;
 
     const q = query(collection(db, "chatThreads", threadId, "messages"), orderBy("createdAt", "asc"));
     const unsubscribe = onSnapshot(
@@ -84,7 +109,7 @@ export function ChatBubble() {
     );
 
     return () => unsubscribe();
-  }, [isOpen, threadId]);
+  }, [isOpen, threadId, firebaseReady]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -94,7 +119,7 @@ export function ChatBubble() {
 
   const handleSend = async (event: FormEvent) => {
     event.preventDefault();
-    if (!threadId || !message.trim() || sending) return;
+    if (!threadId || !firebaseReady || !message.trim() || sending) return;
 
     try {
       setSending(true);
@@ -238,7 +263,7 @@ export function ChatBubble() {
                     value={message}
                     onChange={(event) => setMessage(event.target.value)}
                     placeholder="Type a message..."
-                    disabled={requiresLogin || !threadId || sending}
+                    disabled={requiresLogin || !threadId || !firebaseReady || sending}
                     style={{
                       flex: 1,
                       padding: "0.6rem 1rem",
@@ -251,7 +276,7 @@ export function ChatBubble() {
                   <button
                     type="submit"
                     className="btn btn-primary"
-                    disabled={requiresLogin || !threadId || sending}
+                    disabled={requiresLogin || !threadId || !firebaseReady || sending}
                     style={{ padding: "0.6rem", borderRadius: "50%" }}
                     aria-label="Send message"
                   >

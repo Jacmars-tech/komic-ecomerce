@@ -18,10 +18,18 @@ if (!admin.apps.length) {
 }
 
 export const adminDb: admin.firestore.Firestore | null = hasAdminCreds ? admin.firestore() : null;
+export const adminAuth: admin.auth.Auth | null = hasAdminCreds ? admin.auth() : null;
 
 export function requireAdminDb(): admin.firestore.Firestore {
   if (!adminDb) {
     throw new Error("Firestore admin client is not configured.");
   }
   return adminDb;
+}
+
+export function requireAdminAuth(): admin.auth.Auth {
+  if (!adminAuth) {
+    throw new Error("Firebase admin auth is not configured.");
+  }
+  return adminAuth;
 }
